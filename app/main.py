@@ -170,14 +170,25 @@ class ApiOverlapHang:
         try:
             require_user(req)
             body = await req.get_media() or {}
-            _json(
-                resp,
-                overlap_svc.hang_window(
-                    str(body.get("table_name") or "dw_orders_d"),
-                    str(body.get("start_date") or "2026-11-11"),
-                    str(body.get("end_date") or "2026-11-13"),
-                ),
+            result = overlap_svc.hang_window(
+                str(body.get("table_name") or "dw_orders_d"),
+                str(body.get("start_date") or "2026-11-11"),
+                str(body.get("end_date") or "2026-11-13"),
+                mode=body.get("mode"),
             )
+            # 拒登按业务失败返回 409，前端据此点亮拒登芯片
+            _json(resp, result, 409 if result.get("ok") is False else 200)
+        except ServiceError as exc:
+            _json(resp, {"error": exc.message}, exc.status_code)
+
+
+class ApiOverlapMode:
+    async def on_post(self, req, resp):
+        try:
+            require_user(req)
+            body = await req.get_media() or {}
+            mode = overlap_svc.set_mode(str(body.get("mode") or ""))
+            _json(resp, {"ok": True, "mode": mode})
         except ServiceError as exc:
             _json(resp, {"error": exc.message}, exc.status_code)
 
@@ -206,6 +217,7 @@ def create_app() -> falcon.asgi.App:
     app.add_route("/api/slices/{slice_id:int}/replay", ApiReplay())
     app.add_route("/api/coverage-reports", ApiCoverage())
     app.add_route("/api/overlap/hang", ApiOverlapHang())
+    app.add_route("/api/overlap/mode", ApiOverlapMode())
     app.add_route("/api/overlap/panels", ApiOverlapPanels())
     app.add_static_route("/static", str(STATIC))
     return app

@@ -92,21 +92,84 @@ async function renderCoverage(){
 
 async function render_queue(){
   const j = await api('/api/overlap/panels');
-  view.innerHTML = `<div class="wall">${(j.queue||[]).map(r=>`<article class="card"><p>${r.note}</p><span class="tag">accepted ${r.accepted}</span></article>`).join('')||'<p class="muted">空</p>'}
-    <article class="card"><button class="primary" id="h" type="button">挂相交窗</button></article></div>`;
-  document.getElementById('h').onclick = async ()=>{ try{ const r=await api('/api/overlap/hang',{method:'POST',body:'{}'}); setMsg(r.chip||'ok', !r.ok); await render_queue(); }catch(e){setMsg(e.message,true);} };
+  view.innerHTML = `<div class="wall">
+    <article class="card">
+      <h3>挂窗登记</h3>
+      <label>目标表<input id="f-table" value="dw_orders_d" /></label>
+      <label>开始日<input id="f-start" type="date" value="2026-11-11" /></label>
+      <label>结束日<input id="f-end" type="date" value="2026-11-13" /></label>
+      <label>落库策略
+        <select id="f-mode">
+          <option value="hard_unique"${j.mode==='hard_unique'?' selected':''}>唯一约束拦截（相交不落库）</option>
+          <option value="conflict_ledger"${j.mode==='conflict_ledger'?' selected':''}>旁路冲突账册（先记账再撤回）</option>
+        </select>
+      </label>
+      <button class="primary" id="h" type="button">挂窗</button>
+      <p id="hang-chip" class="chip-box"></p>
+    </article>
+    ${(j.queue||[]).map(r=>`<article class="card ${r.rejected?'reject':''}">
+      <p>${r.note}</p>
+      ${r.rejected?'<span class="tag chip-reject">拒登</span>':'<span class="tag">accepted '+r.accepted+'</span>'}
+    </article>`).join('')||'<article class="card"><p class="muted">冲突队列为空</p></article>'}
+  </div>`;
+  document.getElementById('f-mode').onchange = async (e)=>{
+    try{ await api('/api/overlap/mode',{method:'POST',body:JSON.stringify({mode:e.target.value})}); setMsg('落库策略已切换为 '+e.target.value); }
+    catch(err){ setMsg(err.message,true); }
+  };
+  document.getElementById('h').onclick = async ()=>{
+    const chip = document.getElementById('hang-chip');
+    chip.textContent=''; chip.className='chip-box';
+    try{
+      const payload = {
+        table_name: document.getElementById('f-table').value,
+        start_date: document.getElementById('f-start').value,
+        end_date: document.getElementById('f-end').value,
+        mode: document.getElementById('f-mode').value,
+      };
+      const r = await api('/api/overlap/hang',{method:'POST',body:JSON.stringify(payload)});
+      chip.textContent = r.chip || '已挂';
+      chip.className = 'chip-box chip-ok';
+      setMsg('挂窗成功：'+(r.day_bound_live||''));
+      await render_queue();
+    }catch(err){
+      // 409 拒登：点亮拒登芯片
+      chip.textContent = '拒登';
+      chip.className = 'chip-box chip-reject';
+      setMsg(err.message, true);
+      await render_queue();
+      const chip2 = document.getElementById('hang-chip');
+      chip2.textContent = '拒登'; chip2.className = 'chip-box chip-reject';
+    }
+  };
 }
 async function render_bound(){
   const j = await api('/api/overlap/panels');
-  view.innerHTML = `<div class="wall">${(j.windows||[]).map(w=>`<article class="card"><h3>${w.table_name}</h3><p>${w.start_date}→${w.end_date}</p></article>`).join('')}</div>`;
+  view.innerHTML = `<div class="wall">${(j.windows||[]).map(w=>`<article class="card">
+    <h3>${w.table_name}</h3><p>${w.start_date}→${w.end_date}</p>
+    <span class="tag">${w.status||'在册'}</span>
+  </article>`).join('')||'<p class="muted">库存无窗行</p>'}
+  <article class="card"><p class="muted">库存窗行 ${(j.windows||[]).length} 条，相交对数 ${j.waterline.overlap_rows}</p></article></div>`;
 }
 async function render_card(){
   const j = await api('/api/overlap/panels');
-  view.innerHTML = `<div class="card"><p>现行日界 ${j.card.live}</p><p>可挂门槛 ${j.card.gate}</p><p class="muted">双界未对齐</p></div>`;
+  const aligned = j.card.aligned;
+  view.innerHTML = `<div class="card">
+    <h3>日界双界（同源派生）</h3>
+    <p>现行日界 <strong>${j.card.live||'—'}</strong></p>
+    <p>可挂门槛 <strong>${j.card.gate||'—'}</strong></p>
+    <p class="${aligned?'ok-text':'muted'}">${aligned?'双界已对齐，同源库存最大结束日':'库存为空，暂不设门槛'}</p>
+    <p class="muted">当前落库策略：${j.mode}</p>
+  </div>`;
 }
 async function render_water(){
   const j = await api('/api/overlap/panels');
-  view.innerHTML = `<div class="card"><p>叠日行 ${j.waterline.overlap_rows}</p></div>`;
+  const bad = (j.waterline.overlap_rows||0) + (j.waterline.slice_overlap_rows||0);
+  view.innerHTML = `<div class="card">
+    <h3>回灌水线</h3>
+    <p>库存叠日行（相交窗对） <strong class="${j.waterline.overlap_rows?'err':'ok-text'}">${j.waterline.overlap_rows}</strong></p>
+    <p>切片叠日行（跨窗同日落库） <strong class="${j.waterline.slice_overlap_rows?'err':'ok-text'}">${j.waterline.slice_overlap_rows}</strong></p>
+    ${bad?'<span class="tag chip-reject">拒登</span>':'<span class="tag chip-ok">水线干净</span>'}
+  </div>`;
 }
 
 async function show(tab){

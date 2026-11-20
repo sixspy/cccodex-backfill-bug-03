@@ -1,3 +1,4 @@
+import sqlite3
 from datetime import date, timedelta
 
 from app.db import get_db
@@ -76,12 +77,29 @@ def replay_slice(slice_id: int, db_path: str | None = None) -> dict:
             raise ServiceError("切片已落库", 409)
         if sl["status"] != "待重放":
             raise ServiceError("仅待重放切片可重放", 409)
+        # 跨窗叠日互斥：同一落点（切片日）只许一个窗口落库
+        clash = conn.execute(
+            "SELECT 1 FROM backfill_slices "
+            "WHERE slice_date=? AND window_id != ? AND status='已落库' LIMIT 1",
+            (sl["slice_date"], sl["window_id"]),
+        ).fetchone()
+        if clash:
+            raise ServiceError(
+                f"{sl['slice_date']} 已有窗口落库，禁止叠日重放", 409
+            )
         # deterministic fake row count from date digits
         rows = 100 + int(sl["slice_date"].replace("-", "")) % 97
-        conn.execute(
-            "UPDATE backfill_slices SET status='已落库', row_count=? WHERE id=?",
-            (rows, slice_id),
-        )
+        try:
+            conn.execute(
+                "UPDATE backfill_slices SET status='已落库', row_count=? WHERE id=?",
+                (rows, slice_id),
+            )
+        except sqlite3.IntegrityError as exc:
+            if "禁止叠日重放" in str(exc):
+                raise ServiceError(
+                    f"{sl['slice_date']} 已有窗口落库，禁止叠日重放", 409
+                )
+            raise ServiceError(f"重放失败：{exc}")
         conn.execute(
             "UPDATE backfill_windows SET status='执行中' WHERE id=?",
             (sl["window_id"],),

@@ -45,6 +45,11 @@ h1 { margin: 0.25rem 0 0; font-size: 1.35rem; }
 .card h3 { margin: 0 0 0.4rem; font-size: 1rem; }
 .muted { color: var(--muted); }
 .err { color: var(--danger); }
+.ok-text { color: var(--ok); }
 .tag { display:inline-block; padding:0.1rem 0.5rem; border-radius:999px; background:#2a3f66; font-size:0.78rem; }
+.chip-reject { background: rgba(255,107,107,0.18); color: var(--danger); border: 1px solid var(--danger); }
+.chip-ok { background: rgba(62,207,142,0.16); color: var(--ok); border: 1px solid var(--ok); }
+.chip-box { display:inline-block; margin-top:0.7rem; padding:0.35rem 0.9rem; border-radius:999px; font-weight:700; min-height:1.2rem; }
+.card.reject { border-color: var(--danger); }
 label { display:block; margin: 0.65rem 0; }
 input, select { width:100%; margin-top:0.3rem; padding:0.5rem 0.65rem; border-radius:10px; border:1px solid var(--line); background:#101b30; color:var(--ink); font:inherit; }
